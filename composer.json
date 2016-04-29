@@ -1,0 +1,28 @@
+{
+	"name": "tsolucio/coreBOSOpenKM",
+	"type": "corebos-extension",
+	"properties": {
+		"name": "coreBOS-OpenKM",
+		"description": "coreBOS-OpenKM Integration",
+		"keywords": ["DMS","Documents","OpenKM","integration"],
+		"homepage": "http://corebos.org/documentation/doku.php?id=en:extensions:extensions:coreBOSOpenKM",
+		"version": "1.0",
+		"time": "2012-06-12",
+		"license": "Vizsage",
+		"extra": {
+			"distribution": "Free"
+		},
+		"authors": [
+					{
+					"name": "JPL TSolucio, S.L.",
+					"email": "info(at)tsolucio(dot)com"
+					}
+		],
+		"support": {
+				"email": "info(at)tsolucio(dot)com",
+				"issues": "https://github.com/tsolucio/coreBOSOpenKM",
+				"forum": "http://discussions.corebos.org/",
+				"source": "https://github.com/tsolucio/coreBOSOpenKM"
+		}
+	}
+}
