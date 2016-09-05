@@ -7,4 +7,8 @@ In May 2016 one of our community members gave it another shot and ended up aband
 
 http://discussions.corebos.org/thread-271.html
 
-Don't hesitate to contact us if you want to pick it up.
+He did get it working to a very interesting and useful state and then enhanced that to work with LogicalDoc, and he even shared the code with us!!
+
+This extension is operative. For sure it will need debuging, love and care, but it is a VERY good start.
+
+Don't hesitate to contact us if you want to pick it up, either on OpenKM or LogicalDoc
