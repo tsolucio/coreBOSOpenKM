@@ -1,0 +1,30 @@
+Mohamed Said Lokhat - mslokhat@gmail.com
+Adaptation with LogicalDoc 
+
+- install module
+- apply patch in modules/OpenKM/OpenKM.diff
+- add Global Variable Document_UseOpenKM to changeSets/DefineGlobalVariables.php
+- copy modules/OpenKM/changeSets/InstallOpenKM.xml to modules/cbupdater/cbupdates
+- load and apply corebos updater
+
+i have made the changes :
+- support for LogicalDoc instead of OpenKM (however openkm code still works)
+- per user login and creation of users in LD , i have added a field okmpassword in vtiger_users which keep the plain password - i don't know why for admin the encrypted password works but for normal users no
+
+The document module is now out of use 
+i did not develop on this (creation of folders,....) as LD already provide everything. 
+
+i did not delete the file in storage after it is saved in LD : this can be done 
+
+there is still one issue :
+opening LD in an iframe just make it freeze , seems a javascript error on cache file
+
+for LD--> CB, i'm thinking of a script that will run in scheduler and create the documents in CB for each documents in LD 
+you'll see in vtiger_attachments there is a field okmuuid which represent the LD id. 
+
+i had an issue on creating the user on LD. thanks to the forum (http://forums.logicaldoc.com/viewtopic.php?f=10&t=9069&p=14149#p14149)
+
+the groups are now well inserted for the user
+
+
+Rgds

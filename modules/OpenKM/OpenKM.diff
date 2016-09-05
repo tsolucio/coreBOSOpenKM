@@ -1,0 +1,335 @@
+diff --git a/data/CRMEntity.php b/data/CRMEntity.php
+index 18b6d58..ffd2e45 100755
+--- a/data/CRMEntity.php
++++ b/data/CRMEntity.php
+@@ -232,6 +232,23 @@ class CRMEntity {
+ 			$sql2 = "insert into vtiger_attachments(attachmentsid, name, description, type, path) values(?, ?, ?, ?, ?)";
+ 			$params2 = array($current_id, $filename, $description_val, $filetype, $upload_file_path);
+ 			$result = $adb->pquery($sql2, $params2);
++			//-- MSL
++			$useOKM = GlobalVariable::getVariable('Document_UseOpenKM', 'false');
++			if ($useOKM == 'true') {
++				require_once("modules/OpenKM/OpenKM.php");
++				$oKM = new OpenKM();
++				if($oKM->isRunning()){
++					$oKM->Authenticate();
++					$flduuid = $_REQUEST['folderid'];
++					/*OKM: $docPath = $oKM->getPath($flduuid);
++					$docuuid = $oKM->CreateDocument($upload_file_path . $current_id . "_" . $binFile, $docPath . "/" . $current_id . "_" . $binFile);*/
++					$docuuid = $oKM->CreateDocument($upload_file_path . $current_id . "_" . $binFile, $filename, $flduuid);
++					$sql2 = "update vtiger_attachments set okmuuid=? where attachmentsid = ?";
++					$params2 = array($docuuid, $current_id);
++					$result = $adb->pquery($sql2, $params2);
++				}
++			}
++			//----
+ 
+ 			if ($_REQUEST['mode'] == 'edit') {
+ 				if ($id != '' && isset($_REQUEST['fileid']) && $_REQUEST['fileid'] != '') {
+diff --git a/include/utils/EditViewUtils.php b/include/utils/EditViewUtils.php
+index aeb0a88..e5e10c6 100644
+--- a/include/utils/EditViewUtils.php
++++ b/include/utils/EditViewUtils.php
+@@ -1397,8 +1397,27 @@ function getOutputHtml($uitype, $fieldname, $fieldlabel, $maxlength, $col_fields
+ 			$fid=$adb->query_result($res,$i,"folderid");
+ 			$fldr_name[$fid]=$adb->query_result($res,$i,"foldername");
+ 		}
+-		$fieldvalue[] = $fldr_name;
++		//$fieldvalue[] = $fldr_name; // MSL
++		//-- MSL
++		$useOKM = GlobalVariable::getVariable('Document_UseOpenKM', 'false');
++		if ($useOKM == 'true') {
++			require_once("modules/OpenKM/OpenKM.php");
++			$oKM = new OpenKM();
++			if($oKM->isRunning()){
++				$oKM->Authenticate();
++				$array = array();
++				$oKM->getFolders(4,0, $array);
++				// $oKM->getFolders("/okm:root/",0, $array);
++				foreach ($array as $folder) {
++					//$fid=$folder['uuid']->return;
++					$fid=$folder['uuid'];
++					$fldr_name[$fid]=$folder['name'];
++				}
++				$fieldvalue[] = $fldr_name;
++			}
+ 		}
++		//----
++	}
+ 	elseif($uitype == 27){
+ 		if($value == 'E'){
+ 			$external_selected = "selected";
+diff --git a/include/utils/ListViewUtils.php b/include/utils/ListViewUtils.php
+index a67febd..6e0f71c 100755
+--- a/include/utils/ListViewUtils.php
++++ b/include/utils/ListViewUtils.php
+@@ -1673,6 +1673,26 @@ function getValue($field_result, $list_result, $fieldname, $focus, $module, $ent
+ 		$res = $adb->pquery($sql, array($temp_val));
+ 		$foldername = $adb->query_result($res, 0, 'foldername');
+ 		$value = $foldername;
++		// MSL : TODO OpenKM integration
++		$useOKM = GlobalVariable::getVariable('Document_UseOpenKM', 'false');
++		if ($useOKM == 'true') {
++			require_once("modules/OpenKM/OpenKM.php");
++			$oKM = new OpenKM();
++			if($oKM->isRunning()){
++				$oKM->Authenticate();
++				$sql = "SELECT okmuuid FROM vtiger_attachments a , vtiger_seattachmentsrel s WHERE a.attachmentsid  = s.attachmentsid and s.crmid = ?";
++				$res = $adb->pquery($sql, array($entity_id));
++				$uuid = $adb->query_result($res, 0, 'okmuuid');
++				if (strlen($uuid) > 0 ) {
++					$value = $oKM->getDocumentPath($uuid);
++					/*$path1 = explode('/',$path);
++					array_pop($path1);
++					$path = implode ('/',$path1);
++					$value = $path;*/
++				}
++			}
++		}
++		//----
+ 	}
+ 	//added for asterisk integration
+ 	elseif ($uitype == 11) {
+diff --git a/modules/Documents/DetailView.php b/modules/Documents/DetailView.php
+index 2324317..78925be 100644
+--- a/modules/Documents/DetailView.php
++++ b/modules/Documents/DetailView.php
+@@ -162,6 +162,24 @@ $smarty->assign('CUSTOM_LINKS', Vtiger_Link::getAllByType(getTabid($currentModul
+ 
+ // Record Change Notification
+ $focus->markAsViewed($current_user->id);
++//-- MSL
++/*$useOKM = GlobalVariable::getVariable('Document_UseOpenKM', 'false');
++if ($useOKM == 'true') {
++	require_once("modules/OpenKM/OpenKM.php");
++	$oKM = new OpenKM();
++	if($oKM->isRunning()){
++		$oKM->Authenticate();
++		$categs = array();
++		$oKM->getCategories('',0, $categs);
++		foreach ($categs as $folder) {
++			$fid=$folder['uuid']->return;
++			$fldr_name[$fid]=$folder['name'];
++		}
++		$fieldvalue[] = $fldr_name;
++		$smarty->assign('OKMCATEGORIES',$fieldvalue);
++	}
++}	*/
++//----
+ 
+ $smarty->assign('DETAILVIEW_AJAX_EDIT', PerformancePrefs::getBoolean('DETAILVIEW_AJAX_EDIT', true));
+ 
+diff --git a/modules/Documents/DownloadFile.php b/modules/Documents/DownloadFile.php
+index 509e55b..a6c57fc 100644
+--- a/modules/Documents/DownloadFile.php
++++ b/modules/Documents/DownloadFile.php
+@@ -44,6 +44,20 @@ if($adb->num_rows($result) == 1)
+ 	else
+ 	{
+ 		$fileContent = fread(fopen($filepath.$saved_filename, "r"), $filesize);
++
++		//-- MSL
++		$useOKM = GlobalVariable::getVariable('Document_UseOpenKM', 'false');
++		if ($useOKM == 'true') {
++			$pathQuery = $adb->pquery("select okmuuid from vtiger_attachments where attachmentsid = ?",array($fileid));
++			$docuuid = $adb->query_result($pathQuery,0,'okmuuid');
++			require_once("modules/OpenKM/OpenKM.php");
++			$oKM = new OpenKM();
++			if($oKM->isRunning()){
++				$oKM->Authenticate();
++				$fileContent = $oKM->getContentsByUUID($docuuid);
++			}
++		}
++		//----
+ 	}
+ 	if($fileContent != '')
+ 	{
+diff --git a/modules/Potentials/MassUploadImage.php b/modules/Potentials/MassUploadImage.php
+new file mode 100644
+index 0000000..f6d1b44
+--- /dev/null
++++ b/modules/Potentials/MassUploadImage.php
+@@ -0,0 +1,112 @@
++<?php
++/*************************************************************************************************
++ * Copyright 2015 JPL TSolucio, S.L. -- This file is a part of TSOLUCIO coreBOS Customizations.
++ * Licensed under the vtiger CRM Public License Version 1.1 (the 'License'); you may not use this
++ * file except in compliance with the License. You can redistribute it and/or modify it
++ * under the terms of the License. JPL TSolucio, S.L. reserves all rights not expressly
++ * granted by the License. coreBOS distributed by JPL TSolucio S.L. is distributed in
++ * the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
++ * warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. Unless required by
++ * applicable law or agreed to in writing, software distributed under the License is
++ * distributed on an 'AS IS' BASIS, WITHOUT ANY WARRANTIES OR CONDITIONS OF ANY KIND,
++ * either express or implied. See the License for the specific language governing
++ * permissions and limitations under the License. You may obtain a copy of the License
++ * at <http://corebos.org/documentation/doku.php?id=en:devel:vpl11>
++ *************************************************************************************************
++ *  Module       : Mass Upload Image On Product
++ *  Version      : 1.0
++ *  Author       : JPL TSolucio, S. L.
++ *************************************************************************************************/
++require_once('Smarty_setup.php');
++
++global $current_language, $currentModule, $theme, $adb;
++
++$projectid = vtlib_purify($_REQUEST['record']);
++
++function Category_tks($cat, $level='',$tks_selected_fid, $catname, $potentialid) {
++		global $adb,$uii;
++		$selected = 'selected="selected"';
++		$sql = "select folderid,foldername from vtiger_attachmentsfolder where parentfolderid  =? ";
++		$res = $adb->pquery($sql,array($cat));
++		if($adb->num_rows($res) >= 1) {
++				if($cat>0){
++				  $level .= '&raquo;';
++				}
++				if ($catname <> "")
++					$uii .="<optgroup label='" . $catname."'>";
++				while($row = $adb->fetch_row($res))
++				{	$folderid = $row['folderid'];
++					if (($cat == 55 ) && ($row['foldername'] != $potentialid) )
++						continue;
++					if ($row['foldername'] == $potentialid) {
++						$fname = $adb->getOne("SELECT potentialname as newid FROM vtiger_potential where potentialid=$potentialid"  ,0,"newid");
++					} else {
++						$fname = $row['foldername'] ;
++					}
++					if($folderid == $tks_selected_fid)
++					{
++						$selected = 'selected="selected"';
++					}
++					else
++					{
++						$selected = '';
++					}
++					//$uii .="<optgroup label='" . $row['foldername']."'>";
++					if ($row['foldername'] != 'Experts')
++						$uii .="<option value = ".$folderid." ".$selected.">".$level.$fname."</option>";
++					Category_tks($row['folderid'],$level,$tks_selected_fid, $fname, $potentialid);
++					//$uii .= "</optgroup>";
++				}
++				if ($catname <> "")
++					$uii .= "</optgroup>";
++		}
++		return $uii;
++	}
++	$folderid = $adb->getOne("SELECT folderid as newid FROM vtiger_potential where potentialid=$projectid"  ,0,"newid");
++	//$uii = Category_tks($folderid,"",$tks_selected_fid, "", $projectid);
++
++	//-- MSL
++	$useOKM = GlobalVariable::getVariable('Document_UseOpenKM', 'false');
++	if ($useOKM == 'true') {
++		require_once("modules/OpenKM/OpenKM.php");
++		$oKM = new OpenKM();
++		if($oKM->isRunning()){
++			$oKM->Authenticate();
++			/*$path = $oKM->getPath($folderid);
++			$array = array();
++			$oKM->getFolders($path,$folderid, $array);
++			foreach ($array as $folder) {
++				$fid=$folder['uuid']->return;
++				$uii .= "<option value='$fid'>" . $folder['name'] . "</option>\n";
++			}*/
++			$array = array();
++			if (!is_numeric($folderid))
++				$path = $oKM->getPath($folderid);
++			else
++				$path = $folderid;
++			$oKM->getFolders($path,$folderid, $array);
++			foreach ($array as $folder) {
++				$fid=$folder['uuid'];
++				$uii .= "<option value='$fid'>" . $folder['name'] . "</option>\n";
++			}
++		}
++	}
++	//----
++	$ui ="<select name ='folderid' id='folderid' class='form-control' style='text-indent:15px;'>".$uii."</select>";
++	$focus = CRMEntity::getInstance('Documents');
++//Technokrafts --ends
++
++$theme_path='themes/'.$theme.'/';
++$image_path=$theme_path.'images/';
++$smarty = new vtigerCRM_Smarty;
++$smarty->assign('ID',$projectid);
++
++$smarty->assign('tks_fldvalue',$ui);
++
++$smarty->assign('FILENAME',$focus->getFileTypeFieldName());
++
++$smarty->assign('THEME', $theme);
++$smarty->assign('IMAGE_PATH', $image_path);
++$smarty->assign('MODULE', $currentModule);
++$smarty->display('modules/Potentials/dropzone-fileupload.tpl'); //MSL
++?>
+diff --git a/modules/Users/Users.php b/modules/Users/Users.php
+index 77e323e..8f6d8af 100644
+--- a/modules/Users/Users.php
++++ b/modules/Users/Users.php
+@@ -455,6 +455,19 @@ class Users extends CRMEntity {
+ 			return false;
+ 		}
+ 		$this->createAccessKey();
++		//-- MSL
++		$useOKM = GlobalVariable::getVariable('Document_UseOpenKM', 'false');
++		if ($useOKM == 'true') {
++			require_once("modules/OpenKM/OpenKM.php");
++			$oKM = new OpenKM();
++			if($oKM->isRunning()){
++				$oKM->RootAuthenticate();
++				$oKM->changePassword($usr_name, $user_password, $new_password);
++				$sql1 = "update vtiger_users set okmpassword= where id=?";
++				$this->db->pquery($sql1, array($new_password , $this->id));
++			}
++		}
++		//----
+ 		return true;
+ 	}
+ 
+@@ -632,6 +645,20 @@ class Users extends CRMEntity {
+ 		}
+ 		$this->db->completeTransaction();
+ 		$this->db->println("TRANS saveentity ends");
++
++		//-- MSL
++		$useOKM = GlobalVariable::getVariable('Document_UseOpenKM', 'false');
++		if ($useOKM == 'true') {
++			require_once("modules/OpenKM/OpenKM.php");
++			$oKM = new OpenKM();
++			if($oKM->isRunning()){
++				$oKM->RootAuthenticate();
++				$oKM->createUser($this->column_fields['user_name'], $this->column_fields['first_name'], $this->column_fields['last_name'], $this->column_fields['email1'], $this->column_fields['user_password']);		
++				$sql1 = "update vtiger_users set okmpassword= where id=?";
++				$this->db->pquery($sql1, array($password , $this->id));
++			}
++		}
++		//----
+ 	}
+ 
+ 	function createAccessKey() {
+diff --git a/modules/uploads/downloadfile.php b/modules/uploads/downloadfile.php
+index de92cb8..38928d6 100644
+--- a/modules/uploads/downloadfile.php
++++ b/modules/uploads/downloadfile.php
+@@ -31,6 +31,21 @@ if(!empty($deletecheck) && $adb->query_result($deletecheck, 0, 'deleted') == 1)
+ 		$disk_file_size = filesize($filepath.$saved_filename);
+ 		$filesize = $disk_file_size + ($disk_file_size % 1024);
+ 		$fileContent = fread(fopen($filepath.$saved_filename, "r"), $filesize);
++
++		//-- MSL
++		$useOKM = GlobalVariable::getVariable('Document_UseOpenKM', 'false');
++		if ($useOKM == 'true') {
++			$pathQuery = $adb->pquery("select okmuuid from vtiger_attachments where attachmentsid = ?",array($attachmentsid));
++			$docuuid = $adb->query_result($pathQuery,0,'okmuuid');
++			require_once("modules/OpenKM/OpenKM.php");
++			$oKM = new OpenKM();
++			if($oKM->isRunning()){
++				$oKM->Authenticate();
++				//OKM: $docPath = $oKM->getDocumentPath($docuuid) ;
++				$fileContent = $oKM->getContentsByUUID($docuuid);
++			}
++		}
++		//----
+ 		header("Content-type: $fileType");
+ 		header("Pragma: public");
+ 		header("Expires: ".gmdate("D, d M Y H:i:s")." GMT");

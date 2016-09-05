@@ -14,6 +14,13 @@
  * License terms of Creative Commons Attribution-NonCommercial-ShareAlike 3.0 (the License).
 */
 
+/*  Modified by : Mohamed Said Lokhat - mslokhat@gmail.com
+	Adaptation with LogicalDoc 
+	
+*/
+
+	define("DEFAULT_WORKSPACE", 4);
+
 	function format_exception($e) {
 		if (isset($e->detail)) {
 			$reflectionObject = new ReflectionObject($e->detail);
@@ -71,7 +78,7 @@ class OpenKM extends CRMEntity {
 	var $IsCustomModule = true;
 
 	var $url = "http://localhost:8080/OpenKM";
-	var $user = "okmAdmin";
+	var $user = "admin";
 	var $password = "admin";
 	var $main_path = "/okm:root/";
 	var $folder;
@@ -79,18 +86,22 @@ class OpenKM extends CRMEntity {
 	var $soap_auth;
 	var $soap_folder;
 	var $soap_document;
+	var $soap_security;
 	var $soap_propertygroup;
 	var $soap_repository;
 	var $token;
 	var $running;
+	var $cat_path = "/okm:categories";
 
 	//constructor
 		function __construct() {
-			global $adb;
+			global $adb, $current_user;
+			
 			$results = $adb->query('select * from vtiger_openkm_config');
-
-			$this->user = $adb->query_result($results, 0, 'openkm_user');
-			$this->password = $adb->query_result($results, 0, 'openkm_password');
+			$res = $adb->query('select okmpassword from vtiger_users where id=' . $current_user->id);
+			$pass = $adb->query_result($res, 0, 'okmpassword');
+			$this->user = $current_user->column_fields['user_name']; //$adb->query_result($results, 0, 'openkm_user');
+			$this->password = $pass; //$adb->query_result($results, 0, 'openkm_password');
 			$this->main_path = $adb->query_result($results, 0, 'openkm_main_path');
 			$this->url = $adb->query_result($results, 0, 'openkm_url');
 
@@ -98,14 +109,18 @@ class OpenKM extends CRMEntity {
 				'exceptions'=>1
 			);
 			try{
-				$this->soap_auth = @new SoapClient($this->url."/services/OKMAuth?wsdl",$options);
-				$this->soap_folder = @new SoapClient($this->url."/services/OKMFolder?wsdl",$options);
-				$this->soap_document = @new SoapClient($this->url."/services/OKMDocument?wsdl",$options);
-				$this->soap_propertygroup = @new SoapClient($this->url."/services/OKMPropertyGroup?wsdl",$options);
-				$this->soap_repository = @new SoapClient($this->url."/services/OKMRepository?wsdl",$options);
+				$this->soap_auth     = @new SoapClient($this->url."/services/Auth?wsdl",$options);
+				$this->soap_folder   = @new SoapClient($this->url."/services/Folder?wsdl",$options);
+				$this->soap_document = @new SoapClient($this->url."/services/Document?wsdl",$options);
+				$this->soap_security = @new SoapClient($this->url.'/services/Security?wsdl',$options );
+				//$this->soap_propertygroup = @new SoapClient($this->url."/services/OKMPropertyGroup?wsdl",$options);
+				//$this->soap_repository = @new SoapClient($this->url."/services/OKMRepository?wsdl",$options);
+
+
 				$this->running = true;
 			}catch(SoapFault $e){
 				$this->running = false;
+				echo format_exception($e);
 			}
 		}
 
@@ -124,7 +139,7 @@ class OpenKM extends CRMEntity {
 
 	function Authenticate() {
 		try{
-			$obj = $this->soap_auth->login(array('user' => $this->user, 'password' => $this->password));
+			$obj = $this->soap_auth->login(array('username' => $this->user, 'password' => $this->password));
 			$this->token = $obj->return;
 			//print("Token: ".$token."<br/>\n");
 			return($this->token);
@@ -132,11 +147,23 @@ class OpenKM extends CRMEntity {
 			echo "Authenticating: ".format_exception($e);
 		}
 	}
+	
+	function RootAuthenticate() {
+		global $adb;
+			
+		$results = $adb->query('select * from vtiger_openkm_config');
+
+		$user = $adb->query_result($results, 0, 'openkm_user');
+		$password = $adb->query_result($results, 0, 'openkm_password');
+		$this->SetUser($user, $password);
+		$this->Authenticate() ;
+	}
 
 	/* Creates a folder
 	 *-based on the given path
 	 *-if the given path is null, path will be based on its folder attribute
 	*/
+	/* OpemKM code ==> LogicalDoc TODO*/
 	function CreateFolder($path=null) {
 		try{
 			if(!$this->folder){
@@ -171,8 +198,8 @@ class OpenKM extends CRMEntity {
 	/* Retrieves the uuid for the folder $path */
 	function getUUID($path) {
 		try{
-			$uuid = $this->soap_repository->getNodeUuid(array('token' => $this->token, 'path' => $path));
-			return $uuid;
+			$uuid = $this->soap_folder->findByPath(array('sid' => $this->token, 'path' => $path));
+			return $uuid->folder->id;
 		} catch (Exception $e) {
 			echo format_exception($e);
 		}
@@ -181,8 +208,9 @@ class OpenKM extends CRMEntity {
 	/* Retrieves the path for the folder $uuid */
 	function getPath($uuid) {
 		try{
-			$path = $this->soap_folder->getPath(array('token' => $this->token, 'uuid' => $uuid));
-			return $path->return;
+			$folder = $this->soap_folder->getFolder(array('sid' => $this->token, 'folderId' => $uuid));
+			$path = $this->createfullpath($folder);
+			return $path;
 		} catch (Exception $e) {
 			echo format_exception($e);
 		}
@@ -251,8 +279,8 @@ class OpenKM extends CRMEntity {
 	private function CreateSimpleFolder($path) {
 		try{
 			//echo "creo carpeta simple en : $path";exit;
-			$obj = $this->soap_folder->createSimple(array('token' => $this->token, 'fldPath' => $this->folder->path));
-			$fld = $obj->return;
+			$obj = $this->soap_folder->createPath(array('sid' => $this->token, 'parentId'=> DEFAULT_WORKSPACE, 'path' => $this->folder->path));
+			$fld = $obj->folder;
 			//$fld->path
 			//$fld->uuid
 			return $fld;
@@ -280,52 +308,131 @@ class OpenKM extends CRMEntity {
 			echo format_exception($e);
 		}
 	}
+	
+	
+	function createfullpath($folder) {
+		$path = $this->soap_folder->getPath(array('sid' => $this->token, 'folderId' => $folder->folder->id));
+		$i = 0;
+		foreach ($path->folders as $fld) {
+			$rpath .= $fld->name . ($i++ == 0 ? '' : '/');
+		}
+		return $rpath;
+	}
+	
+	/*
+		Get a Folder and all subfolders in an array
+	*/
+	function getFolders($id, $parent = 0, &$arr) {	
+	
+		if ($parent == 0) {
+			$id = DEFAULT_WORKSPACE;
+		}
+		$folder = $this->soap_folder->getFolder(array('sid' => $this->token, 'folderId' => $id));
+		$fldpath = $this->createfullpath($folder);
+		$arr[] = array('uuid'=> $id, 'name'=> $fldpath, 'parent'=> $parent);
+			
+		
+		// List folders
+		$getChildrenResp = $this->soap_folder->listChildren(array('sid' => $this->token, 'folderId' => $folder->folder->id));
+		
+		if (is_array($getChildrenResp->folder)) {
+		  foreach ($getChildrenResp->folder as $subfolder) {
+			$this->getFolders($subfolder->id, $id, $arr);
+		  }
+		} else {			
+			$flarr = (array)$getChildrenResp;
+			if (! empty($flarr) )
+				$this->getFolders($getChildrenResp->folder->id, $id, $arr);
+		}
+		return $arr;		
+	}
+	
+	/* 
+		Get All Categories
+	*/
+	function getCategories($path, $parent = 0, &$arr) {
+		$uuid = $this->getUUID($path);
+		if ($parent == 0) {
+			$parent = $this->getUUID($this->cat_path);
+			$path = $this->cat_path.'/';
+		}
+		$arr[] = array('uuid'=> $uuid, 'name'=> str_replace($this->cat_path,'',$path), 'parent'=> $parent);
+		// List folders
+		try {
+			$getChildrenResp = $this->soap_folder->getChildren(array('token' => $this->token, 'fldPath' => $path));
+			$folderArray = $getChildrenResp->return;
+			if (is_array($folderArray)) {
+			  foreach ($folderArray as $subfolder) {
+				  $this->getCategories($subfolder->path, $uuid, $arr);		
+			  }
+			} 
+		}catch (Exception $e){
+			echo format_exception($e);
+		}
+		return $arr;		
+		
+	}
+	
+	
+	
+	
+	// Documents Functions -------------------------------------------------
 
-	function CreateDocument() {
+	function CreateDocument($file, $filename, $fldid) {
 		try{
 			// create document
 			// faltaria crear clase document, no implemento por no ser necesario de momento
-			$file = '/etc/hosts';
-			$doc = array('path' => '/okm:root/hosts.txt',
-					'mimeType' => null,
-					'actualVersion' => null,
-					'author' => null,
-					'checkedOut' => false,
-					'created' => null,
-					'keywords' => 'nada',
-					'language' => null,
-					'lastModified' => null,
-					'lockInfo' => null,
-					'locked' => false,
-					'permissions' => 0,
-					'size' => 0,
-					'subscribed' => false,
-					'uuid' => null,
-					'convertibleToPdf' => false,
-					'convertibleToSwf' => false,
-					'compactable' => false,
-					'training' => false,
-					'convertibleToDxf' => false);
-			$obj = $this->soap_document->create(array('token' => $this->token, 'doc' => $doc, 'content' => file_get_contents($file)));
-			$doc = $obj->return;
-			print ("[DOCUMENT] Path: ".$doc->path.", Author: ".$doc->author.", Size: ".$doc->actualVersion->size.", UUID".$doc->uuid."<br/>\n");
+			
+			$doc ['language'] = 'en';
+			$doc ['fileName'] =  $filename;
+			$doc ['folderId'] = $fldid; // create the document in DEFAULT_WORKSPACE
+
+			// Requested parameters 
+			// (although they are not evaluated during document creation)
+			$doc ['creatorId'] = 0;
+			$doc ['dateCategory'] = 0;
+			$doc ['docType'] = 0;
+			$doc ['exportStatus'] = 0;
+			$doc ['fileSize'] = 0;
+			$doc ['id'] = 0;
+			$doc ['immutable'] = 0;
+			$doc ['indexed'] = 0;
+			$doc ['lengthCategory'] = 0;
+			$doc ['publisherId'] = 0;
+			$doc ['signed'] = 0;
+			$doc ['size'] = 0;
+			$doc ['status'] = 0; // Status = 0: document unlocked
+			$doc ['published'] = 1;	
+			$doc ['nature'] = 0;
+			$doc ['pages'] = -1; // -1 = default
+			$doc ['stamped'] = 0; // 0 = default (not stamped)  
+			$fh = fopen ( $file, 'r' );
+			$theData = fread ( $fh, filesize ( $file ) );
+			fclose ( $fh );
+			$obj = $this->soap_document->create(array('sid' => $this->token, 'document' => $doc, 'content' => $theData));
+			//$doc = $obj->return;
+			//print ("[DOCUMENT] Path: ".$doc->path.", Author: ".$doc->author.", Size: ".$doc->actualVersion->size.", UUID".$doc->uuid."<br/>\n");
+			return $obj->document->id;
 		} catch (Exception $e) {
 			echo format_exception($e);
+			return "";
 		}
 	}
 
-	function CreateSimpleDocument() {
+	function CreateSimpleDocument($file, $docPath) {
 		try{
 			// create document simple
-			$file = '/etc/hosts';
-			$docPath = '/okm:root/test/hosts.txt';
-			$obj = $this->soap_document->createSimple(array('token' => $this->token, 'docPath' => $docPath, 'content' => file_get_contents($file)));
+			$fh = fopen ( $file, 'r' );
+			$theData = fread ( $fh, filesize ( $file ) );
+			fclose ( $fh );
+			$obj = $this->soap_document->create(array('token' => $this->token, 'docPath' => $docPath, 'content' => $theData));
 			$doc = $obj->return;
-			print ("[DOCUMENT] Path: ".$doc->path.", Author: ".$doc->author.", Size: ".$doc->actualVersion->size.", UUID".$doc->uuid."<br/>\n");
+			//print ("[DOCUMENT] Path: ".$doc->path.", Author: ".$doc->author.", Size: ".$doc->actualVersion->size.", UUID".$doc->uuid."<br/>\n");
 			//AddPropertyGroup($docPath);
-			return $doc;
+			return $doc->uuid;
 		} catch (Exception $e) {
 			echo format_exception($e);
+			return "";
 		}
 	}
 
@@ -340,6 +447,74 @@ class OpenKM extends CRMEntity {
 		} catch (Exception $e) {
 			echo format_exception($e);
 		}
+	}
+	
+	function getContentsByUUID($uuid) {
+		try{
+			$content = $this->soap_document->getContent(array('sid' => $this->token, 'docId' => $uuid));
+			return $content->return;
+		} catch (Exception $e) {
+			echo format_exception($e);
+			return "";
+		}
+	}
+	
+	/* Retrieves the path for the document $uuid */
+	function getDocumentPath($uuid) {
+		try{
+			$doc = $this->soap_document->getDocument(array('sid' => $this->token, 'docId' => $uuid));
+			$folder = $this->soap_folder->getFolder(array('sid' => $this->token, 'folderId' => $doc->document->folderId));
+			$path = $this->createfullpath($folder);
+			return $path;
+		} catch (Exception $e) {
+			//echo format_exception($e);
+			return "undefined";
+		}
+	}
+
+	
+	// Others functions ---------------------------------------------------------------------------------
+	
+	//create User 
+	// TODO : check groupsIds
+	
+	function createUser($name, $firstname, $lastname, $email, $password) {
+		$user['userName'] = $name;
+		$user['firstName'] = $firstname;
+		$user['name'] = $lastname;
+		$user['password'] = $password;
+		$user['groupIds'] = array(2,-10000);;
+		$user['enabled'] = 1;
+		$user['id'] = 0;
+		$user['passwordExpires'] = 0;
+		$user['quota'] = -1;
+		$user['quotaCount'] = 0;
+		$user['source'] = 0;
+		$user['type'] = 0;
+		$user['language'] = 'en';
+		$user['email'] = $email;
+		$user['lastModified'] = date('Y-m-d');
+		$obj = (object) $user;
+		try {
+			$result = $this->soap_security->storeUser(array('sid' => $this->token, 'user'=> $obj));
+		} catch (Exception $e) {
+			echo format_exception($e);				
+		}
+	}
+	
+	function changePassword($user, $old, $new) {
+		try {
+			$users = $this->soap_security->listUsers(array('sid' => $this->token));
+			$userid= -1;
+			foreach ($users->users as $usr) {
+				if ($usr->userName == $user)
+					$userid = $usr->id;
+			}
+			$result = $this->soap_security->changePassword(array('sid' => $this->token, 'userId'=> $userid, 'oldPassword'=> $old,'newPassword'=>$new));
+		} catch (Exception $e) {
+			echo format_exception($e);				
+		}
+		
 	}
 
 	// Logout

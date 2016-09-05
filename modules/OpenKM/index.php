@@ -54,9 +54,20 @@ if(!$okm->isRunning()){
             <!--<input type="submit" name="submit" value="Login">-->
         </form>
         <iframe id="vtIframe" name="vtIframe" width="100%" height="600" src="<?php echo $okm->url;?>"></iframe>';
+		
+		<div id="banner_ad" style="width: 468px; height: 60px;"></div>
         <script type="text/javascript" language="JavaScript"><!--
         //checking cookies, ¿is okm initied?
         var okm_init;
+		
+		var thedomain =  document.domain;
+		var thehtml = jQuery.ajax({
+		  url: '<?php echo $okm->url;?>',
+		  async: false
+		 }).responseText;
+		jQuery('#banner_ad').html(thehtml);
+
+
         function getCookie(c_name)
         {
             var i,x,y,ARRcookies=document.cookie.split(";");
@@ -95,7 +106,7 @@ if(!$okm->isRunning()){
         if(okm_init != 'okm_init')
         {
             setCookie('okm_init','okm_init',1,"/");
-            document.loginform.submit();
+            //document.loginform.submit();
         }
     //--></script>
     <?php

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<updatesChangeLog>
+<changeSet>
+	<author>Mohamed Said Lokhat</author>
+	<description>Install OpenKM and LogicalDoc integration</description>
+	<filename>modules/OpenKM/changeSets/OpenKMFields.php</filename>
+	<classname>OpenKMFields</classname>
+	<systemupdate>false</systemupdate>
+</changeSet>
+</updatesChangeLog>
